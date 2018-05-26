@@ -35,66 +35,76 @@ bool verificar_y_migrar_cadena(const Block *rBlock, const MPI_Status *status){
 
 //Verifica que el bloque tenga que ser incluido en la cadena, y lo agrega si corresponde
 bool validate_block_for_chain(const Block *rBlock, const MPI_Status *status){
-  if(valid_new_block(rBlock)){
+    if(valid_new_block(rBlock)){
 
-    //Agrego el bloque al diccionario, aunque no
-    //necesariamente eso lo agrega a la cadena
-    node_blocks[string(rBlock->block_hash)]=*rBlock;
+        //Agrego el bloque al diccionario, aunque no
+        //necesariamente eso lo agrega a la cadena
+        node_blocks[string(rBlock->block_hash)]=*rBlock;
 
-    //TODO: Si el índice del bloque recibido es 1
-    //y mí último bloque actual tiene índice 0,
-    //entonces lo agrego como nuevo último.
-      //printf("[%d] Agregado a la lista bloque con index %d enviado por %d \n", mpi_rank, rBlock->index,status->MPI_SOURCE);
-      //return true;
+        //TODO: Si el índice del bloque recibido es 1
+        //y mí último bloque actual tiene índice 0,
+        //entonces lo agrego como nuevo último.
+        //printf("[%d] Agregado a la lista bloque con index %d enviado por %d \n", mpi_rank, rBlock->index,status->MPI_SOURCE);
+        //return true;
 
-    //TODO: Si el índice del bloque recibido es
-    //el siguiente a mí último bloque actual,
-    //y el bloque anterior apuntado por el recibido es mí último actual,
-    //entonces lo agrego como nuevo último.
-      //printf("[%d] Agregado a la lista bloque con index %d enviado por %d \n", mpi_rank, rBlock->index,status->MPI_SOURCE);
-      //return true;
+        //TODO: Si el índice del bloque recibido es
+        //el siguiente a mí último bloque actual,
+        //y el bloque anterior apuntado por el recibido es mí último actual,
+        //entonces lo agrego como nuevo último.
+        //printf("[%d] Agregado a la lista bloque con index %d enviado por %d \n", mpi_rank, rBlock->index,status->MPI_SOURCE);
+        //return true;
 
-    //TODO: Si el índice del bloque recibido es
-    //el siguiente a mí último bloque actual,
-    //pero el bloque anterior apuntado por el recibido no es mí último actual,
-    //entonces hay una blockchain más larga que la mía.
-      //printf("[%d] Perdí la carrera por uno (%d) contra %d \n", mpi_rank, rBlock->index, status->MPI_SOURCE);
-      //bool res = verificar_y_migrar_cadena(rBlock,status);
-      //return res;
+        //TODO: Si el índice del bloque recibido es
+        //el siguiente a mí último bloque actual,
+        //pero el bloque anterior apuntado por el recibido no es mí último actual,
+        //entonces hay una blockchain más larga que la mía.
+        //printf("[%d] Perdí la carrera por uno (%d) contra %d \n", mpi_rank, rBlock->index, status->MPI_SOURCE);
+        //bool res = verificar_y_migrar_cadena(rBlock,status);
+        //return res;
 
 
-    //TODO: Si el índice del bloque recibido es igua al índice de mi último bloque actual,
-    //entonces hay dos posibles forks de la blockchain pero mantengo la mía
-      //printf("[%d] Conflicto suave: Conflicto de branch (%d) contra %d \n",mpi_rank,rBlock->index,status->MPI_SOURCE);
-      //return false;
+        //TODO: Si el índice del bloque recibido es igua al índice de mi último bloque actual,
+        //entonces hay dos posibles forks de la blockchain pero mantengo la mía
+        //printf("[%d] Conflicto suave: Conflicto de branch (%d) contra %d \n",mpi_rank,rBlock->index,status->MPI_SOURCE);
+        //return false;
 
-    //TODO: Si el índice del bloque recibido es anterior al índice de mi último bloque actual,
-    //entonces lo descarto porque asumo que mi cadena es la que está quedando preservada.
-      //printf("[%d] Conflicto suave: Descarto el bloque (%d vs %d) contra %d \n",mpi_rank,rBlock->index,last_block_in_chain->index, status->MPI_SOURCE);
-      //return false;
+        //TODO: Si el índice del bloque recibido es anterior al índice de mi último bloque actual,
+        //entonces lo descarto porque asumo que mi cadena es la que está quedando preservada.
+        //printf("[%d] Conflicto suave: Descarto el bloque (%d vs %d) contra %d \n",mpi_rank,rBlock->index,last_block_in_chain->index, status->MPI_SOURCE);
+        //return false;
 
-    //TODO: Si el índice del bloque recibido está más de una posición adelantada a mi último bloque actual,
-    //entonces me conviene abandonar mi blockchain actual
-      //printf("[%d] Perdí la carrera por varios contra %d \n", mpi_rank, status->MPI_SOURCE);
-      //bool res = verificar_y_migrar_cadena(rBlock,status);
-      //return res;
+        //TODO: Si el índice del bloque recibido está más de una posición adelantada a mi último bloque actual,
+        //entonces me conviene abandonar mi blockchain actual
+        //printf("[%d] Perdí la carrera por varios contra %d \n", mpi_rank, status->MPI_SOURCE);
+        //bool res = verificar_y_migrar_cadena(rBlock,status);
+        //return res;
 
-  }
+    }
 
-  printf("[%d] Error duro: Descarto el bloque recibido de %d porque no es válido \n",mpi_rank,status->MPI_SOURCE);
-  return false;
+    printf("[%d] Error duro: Descarto el bloque recibido de %d porque no es válido \n",mpi_rank,status->MPI_SOURCE);
+    return false;
 }
 
 
 //Envia el bloque minado a todos los nodos
 void broadcast_block(const Block *block){
-  //No enviar a mí mismo
-  //TODO: Completar
+    //No enviar a mí mismo
+    //TODO: Completar
+    int count = 1;
+
+    MPI_Bcast( (void *)block, count, *MPI_BLOCK, mpi_rank, TAG_NEW_BLOCK);
+
 }
 
 //Proof of work
 //TODO: Advertencia: puede tener condiciones de carrera
 void* proof_of_work(void *ptr){
+    //Vector de 4 punteros: total_nodes, mpi_rank, last_block_in_chain, node_blocks;
+    // &total_nodes = *ptr[0];
+    // &mpi_rank = *ptr[1];
+    // last_block_in_chain = *ptr[2];
+    // &node_blocks = *ptr[3];
+
     string hash_hex_str;
     Block block;
     unsigned int mined_blocks = 0;
@@ -139,37 +149,68 @@ void* proof_of_work(void *ptr){
 
 int node(){
 
-  //Tomar valor de mpi_rank y de nodos totales
-  MPI_Comm_size(MPI_COMM_WORLD, &total_nodes);
-  MPI_Comm_rank(MPI_COMM_WORLD, &mpi_rank);
+    //Tomar valor de mpi_rank y de nodos totales
+    MPI_Comm_size(MPI_COMM_WORLD, &total_nodes);
+    MPI_Comm_rank(MPI_COMM_WORLD, &mpi_rank);
 
-  //La semilla de las funciones aleatorias depende del mpi_ranking
-  srand(time(NULL) + mpi_rank);
-  printf("[MPI] Lanzando proceso %u\n", mpi_rank);
+    //La semilla de las funciones aleatorias depende del mpi_ranking
+    srand(time(NULL) + mpi_rank);
+    printf("[MPI] Lanzando proceso %u\n", mpi_rank);
 
-  last_block_in_chain = new Block;
+    last_block_in_chain = new Block;
 
-  //Inicializo el primer bloque
-  last_block_in_chain->index = 0;
-  last_block_in_chain->node_owner_number = mpi_rank;
-  last_block_in_chain->difficulty = DEFAULT_DIFFICULTY;
-  last_block_in_chain->created_at = static_cast<unsigned long int> (time(NULL));
-  memset(last_block_in_chain->previous_block_hash,0,HASH_SIZE);
+    //Inicializo el primer bloque
+    last_block_in_chain->index = 0;
+    last_block_in_chain->node_owner_number = mpi_rank;
+    last_block_in_chain->difficulty = DEFAULT_DIFFICULTY;
+    last_block_in_chain->created_at = static_cast<unsigned long int> (time(NULL));
+    memset(last_block_in_chain->previous_block_hash,0,HASH_SIZE);
 
-  //TODO: Crear thread para minar
+    //TODO: Crear thread para minar
+    pthread_t thread_minador;
+    pthread_attr_t thread_attr;
+    int thread_response;
+    void *thread_data[4];   //Vector de 4 punteros: total_nodes, mpi_rank, last_block_in_chain, node_blocks;
+    thread_data[0] = &total_nodes;
+    thread_data[1] = &mpi_rank;
+    thread_data[2] = last_block_in_chain;
+    thread_data[3] = &node_blocks;
 
-  while(true){
+    // Initialize and set thread joinable
+    pthread_attr_init(&thread_attr);
+    pthread_attr_setdetachstate(&thread_attr, PTHREAD_CREATE_JOINABLE);
 
-      //TODO: Recibir mensajes de otros nodos
+    thread_response = pthread_create(&thread_minador, NULL, proof_of_work, &thread_data);
+    if (thread_response) {
+        printf("Error: unable to create thread \n");
+        return -1;
 
-      //TODO: Si es un mensaje de nuevo bloque, llamar a la función
-      // validate_block_for_chain con el bloque recibido y el estado de MPI
+    }else{
 
-      //TODO: Si es un mensaje de pedido de cadena,
-      //responderlo enviando los bloques correspondientes
+        while(true){
 
-  }
+            //MPI_Recv( void* data, int count, MPI_Datatype datatype, int source, int tag, MPI_Comm communicator, MPI_Status* status);
 
-  delete last_block_in_chain;
-  return 0;
+            //TODO: Recibir mensajes de otros nodos
+
+            //TODO: Si es un mensaje de nuevo bloque, llamar a la función
+            // validate_block_for_chain con el bloque recibido y el estado de MPI
+
+            //TODO: Si es un mensaje de pedido de cadena,
+            //responderlo enviando los bloques correspondientes
+
+        }
+
+        // free attribute and wait for the other threads
+        pthread_attr_destroy(&thread_attr);
+        thread_response = pthread_join(thread_minador, NULL);
+        if (thread_response) {
+            printf("Error: unable to join thread \n");
+            return -1;
+        }
+        
+    }
+
+    delete last_block_in_chain;
+    return 0;
 }
