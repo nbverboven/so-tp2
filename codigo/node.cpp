@@ -90,19 +90,33 @@ bool validate_block_for_chain(const Block *rBlock, const MPI_Status *status){
 void broadcast_block(const Block *block){
     //No enviar a mí mismo
     //TODO: Completar
-    int count = 1;
+    MPI_Request requests[total_nodes-1];
+    MPI_Status status[total_nodes-1];
+    printf("[%d] broadcast_block START\n", mpi_rank);
+    //Envío a todos sin que me boloquee ya que después voy a esperar que todos lo hayan 
+    //recibido bien antes de tocar el bloque
+    for(int i=0; i<total_nodes; i++){
+        if(i!=mpi_rank){
+            int j=i;
+            if(j>mpi_rank) //porque en request tengo que tener solo los total_nodes-1 requests
+                j--;
 
-    MPI_Bcast( (void *)block, count, *MPI_BLOCK, mpi_rank, MPI_COMM_WORLD);
-
+            MPI_Isend((void *)block, 1, *MPI_BLOCK, i, TAG_NEW_BLOCK, MPI_COMM_WORLD, &requests[j]);
+        }
+    }
+    
+    MPI_Waitall(total_nodes-1, requests, status);
+    //Listo, ahora puedo volver a guardar el bloque que acabé de minar y ponerme a minar de vuelta
+    printf("[%d] broadcast_block END\n", mpi_rank);
 }
 
 //Proof of work
 //TODO: Advertencia: puede tener condiciones de carrera
 void* proof_of_work(void *ptr){
     //Vector de 4 punteros: total_nodes, mpi_rank, last_block_in_chain, node_blocks;
-    // &total_nodes = *ptr[0];
-    // &mpi_rank = *ptr[1];
-    // last_block_in_chain = *ptr[2];
+    // &total_nodes = (int *)ptr[0];
+    // &mpi_rank = (int *) ptr[1];
+    // last_block_in_chain = (Block *) ptr[2];
     // &node_blocks = *ptr[3];
 
     string hash_hex_str;
@@ -210,17 +224,18 @@ int node(){
 
             //Si tengo un mensaje nuevo y no es mio (de mi thread)
             if (recvFlag != 0 && status.MPI_SOURCE != mpi_rank) {
-
+                
                 if(status.MPI_TAG == TAG_NEW_BLOCK){
+                    printf("[%d] Legó un nuevo mesaje: Nuevo bloque minado!\n", mpi_rank);
 
                     const Block toValidate = newBlock;
                     if( validate_block_for_chain(&toValidate, &status)){
 
-                        if(node_blocks.size() == MAX_BLOCKS-1 ){
+                        if(node_blocks.size() == MAX_BLOCKS){
                             //Se llenó la cadena
                             break;
                         }else{
-                            //TODO: agrego a la cadena
+                            
                         }
                         
                     }else{
@@ -228,6 +243,7 @@ int node(){
                     }
 
                 }else if (status.MPI_TAG == TAG_CHAIN_HASH){
+                    printf("[%d] Legó un nuevo mesaje: Pedido de cadena\n", mpi_rank);
                     //Acá tengo que enviar los bloques correspondientes
                 }
 
