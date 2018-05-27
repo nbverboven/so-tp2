@@ -8,6 +8,8 @@
 #include <atomic>
 #include <mpi.h>
 #include <map>
+#include <mutex>
+#include <condition_variable>
 
 int total_nodes, mpi_rank;
 Block *last_block_in_chain;
@@ -124,37 +126,50 @@ void* proof_of_work(void *ptr){
     unsigned int mined_blocks = 0;
     while(true){
 
-      block = *last_block_in_chain;
+        block = *last_block_in_chain;
 
-      //Preparar nuevo bloque
-      block.index += 1;
-      block.node_owner_number = mpi_rank;
-      block.difficulty = DEFAULT_DIFFICULTY;
-      memcpy(block.previous_block_hash,block.block_hash,HASH_SIZE);
+        //Preparar nuevo bloque
+        block.index += 1;
+        block.node_owner_number = mpi_rank;
+        block.difficulty = DEFAULT_DIFFICULTY;
+        memcpy(block.previous_block_hash,block.block_hash,HASH_SIZE);
 
-      //Agregar un nonce al azar al bloque para intentar resolver el problema
-      gen_random_nonce(block.nonce);
+        //Agregar un nonce al azar al bloque para intentar resolver el problema
+        gen_random_nonce(block.nonce);
 
-      //Hashear el contenido (con el nuevo nonce)
-      block_to_hash(&block,hash_hex_str);
+        //Hashear el contenido (con el nuevo nonce)
+        block_to_hash(&block,hash_hex_str);
 
-      //Contar la cantidad de ceros iniciales (con el nuevo nonce)
-      if(solves_problem(hash_hex_str)){
+        //Contar la cantidad de ceros iniciales (con el nuevo nonce)
+        if(solves_problem(hash_hex_str)){
 
-          //Verifico que no haya cambiado mientras calculaba
-          if(last_block_in_chain->index < block.index){
-            mined_blocks += 1;
-            *last_block_in_chain = block;
-            strcpy(last_block_in_chain->block_hash, hash_hex_str.c_str());
-            last_block_in_chain->created_at = static_cast<unsigned long int> (time(NULL));
-            node_blocks[hash_hex_str] = *last_block_in_chain;
-            printf("[%d] Agregué un producido con index %d \n",mpi_rank,last_block_in_chain->index);
+            //Verifico que no haya cambiado mientras calculaba
+            if(last_block_in_chain->index < block.index){
+                mined_blocks += 1;
+                *last_block_in_chain = block;
+                strcpy(last_block_in_chain->block_hash, hash_hex_str.c_str());
+                last_block_in_chain->created_at = static_cast<unsigned long int> (time(NULL));
+                node_blocks[hash_hex_str] = *last_block_in_chain;
+                printf("[%d] Agregué un producido con index %d \n",mpi_rank,last_block_in_chain->index);
 
-            //TODO: Mientras comunico, no responder mensajes de nuevos nodos
-            //Posible solucion: poner un semaforo/mutex
-            broadcast_block(last_block_in_chain);
-          }
-      }
+                //TODO: Mientras comunico, no responder mensajes de nuevos nodos
+
+                /* Me fijo si el semáforo me indica si node esta recibiendo
+                    un mensaje. Si es así, espero a que se libere */
+                //unique_lock<mutex> lck(broadcast_mtx);
+                //while (thread_recibeMensajes){
+                //    broadcast_cond.wait(lck);
+                //}
+
+                thread_broadcast = true;
+                
+                broadcast_block(last_block_in_chain);
+
+                // Despierto al thread que recibe mensajes
+                thread_broadcast = false;
+                recibeMensajes_cond.notify_one();                
+            }
+        }
 
     }
 
@@ -208,6 +223,15 @@ int node(){
 
         while(true){
             
+            /* Me fijo si el semáforo me indica si se esta haciendo
+                un broadcast de un nuevo nodo. Si es así espero
+                a que se libere */
+            unique_lock<mutex> lck(recibeMensajes_mtx);
+
+            while (thread_broadcast){
+                recibeMensajes_cond.wait(lck);
+            }
+
             //TODO: Recibir mensajes de otros nodos
             if(recvFlag != 0){
                 MPI_Irecv(&newBlock, 1, *MPI_BLOCK, MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &request);
@@ -249,6 +273,7 @@ int node(){
 
                 recvFlag = -1;
             }           
+
 
         }
 
