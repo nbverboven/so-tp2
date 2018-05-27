@@ -92,7 +92,7 @@ void broadcast_block(const Block *block){
     //TODO: Completar
     int count = 1;
 
-    MPI_Bcast( (void *)block, count, *MPI_BLOCK, mpi_rank, TAG_NEW_BLOCK);
+    MPI_Bcast( (void *)block, count, *MPI_BLOCK, mpi_rank, MPI_COMM_WORLD);
 
 }
 
@@ -137,6 +137,7 @@ void* proof_of_work(void *ptr){
             printf("[%d] Agregué un producido con index %d \n",mpi_rank,last_block_in_chain->index);
 
             //TODO: Mientras comunico, no responder mensajes de nuevos nodos
+            //Posible solucion: poner un semaforo/mutex
             broadcast_block(last_block_in_chain);
           }
       }
@@ -186,18 +187,49 @@ int node(){
         return -1;
 
     }else{
+        bool TERMINO_CADENA = false;
 
-        while(true){
+        int recvFlag = -1;
+        Block nuevoBloque;
+        MPI_Request request;
+        MPI_Status status;
 
-            //MPI_Recv( void* data, int count, MPI_Datatype datatype, int source, int tag, MPI_Comm communicator, MPI_Status* status);
-
+        while(!TERMINO_CADENA){
+            
             //TODO: Recibir mensajes de otros nodos
+            if(recvFlag != 0){
+                MPI_Irecv(&nuevoBloque, 1, *MPI_BLOCK, MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &request);
+                recvFlag = 0;    
+            }
 
             //TODO: Si es un mensaje de nuevo bloque, llamar a la función
             // validate_block_for_chain con el bloque recibido y el estado de MPI
 
             //TODO: Si es un mensaje de pedido de cadena,
             //responderlo enviando los bloques correspondientes
+            
+            MPI_Test(&request, &recvFlag, &status);
+
+            //Si tengo un mensaje nuevo y no es mio (de mi thread)
+            if (recvFlag != 0 && status.MPI_SOURCE != mpi_rank) {
+
+                switch(status.MPI_TAG){
+
+                    case TAG_NEW_BLOCK:
+
+                        break;
+
+                    case TAG_CHAIN_HASH:
+
+                        break;
+
+                    case MAX_BLOCKS:
+                        TERMINO_CADENA = true;
+                        break;
+                }
+
+                recvFlag = -1;
+            }           
 
         }
 
@@ -208,7 +240,7 @@ int node(){
             printf("Error: unable to join thread \n");
             return -1;
         }
-        
+
     }
 
     delete last_block_in_chain;
