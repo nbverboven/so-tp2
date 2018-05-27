@@ -187,18 +187,16 @@ int node(){
         return -1;
 
     }else{
-        bool TERMINO_CADENA = false;
-
         int recvFlag = -1;
-        Block nuevoBloque;
+        Block newBlock;
         MPI_Request request;
         MPI_Status status;
 
-        while(!TERMINO_CADENA){
+        while(true){
             
             //TODO: Recibir mensajes de otros nodos
             if(recvFlag != 0){
-                MPI_Irecv(&nuevoBloque, 1, *MPI_BLOCK, MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &request);
+                MPI_Irecv(&newBlock, 1, *MPI_BLOCK, MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &request);
                 recvFlag = 0;    
             }
 
@@ -213,19 +211,24 @@ int node(){
             //Si tengo un mensaje nuevo y no es mio (de mi thread)
             if (recvFlag != 0 && status.MPI_SOURCE != mpi_rank) {
 
-                switch(status.MPI_TAG){
+                if(status.MPI_TAG == TAG_NEW_BLOCK){
 
-                    case TAG_NEW_BLOCK:
+                    const Block toValidate = newBlock;
+                    if( validate_block_for_chain(&toValidate, &status)){
 
-                        break;
+                        if(node_blocks.size() == MAX_BLOCKS-1 ){
+                            //Se llenó la cadena
+                            break;
+                        }else{
+                            //TODO: agrego a la cadena
+                        }
+                        
+                    }else{
+                        //Bloque no válido
+                    }
 
-                    case TAG_CHAIN_HASH:
-
-                        break;
-
-                    case MAX_BLOCKS:
-                        TERMINO_CADENA = true;
-                        break;
+                }else if (status.MPI_TAG == TAG_CHAIN_HASH){
+                    //Acá tengo que enviar los bloques correspondientes
                 }
 
                 recvFlag = -1;
