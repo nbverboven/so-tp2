@@ -53,18 +53,25 @@ bool validate_block_for_chain(const Block *rBlock, const MPI_Status *status){
 		//necesariamente eso lo agrega a la cadena
 		node_blocks[string(rBlock->block_hash)]=*rBlock;
 
-		//TODO: Si el índice del bloque recibido es 1
-		//y mí último bloque actual tiene índice 0,
-		//entonces lo agrego como nuevo último.
-		//printf("[%d] Agregado a la lista bloque con index %d enviado por %d \n", mpi_rank, rBlock->index,status->MPI_SOURCE);
-		//return true;
+		//CATEDRA: Si el índice del bloque recibido es 1 y mí último bloque actual tiene índice 0, entonces lo agrego como nuevo último.
+        if(rBlock->index == 1 && last_block_in_chain->index == 0){
+            //last_block_in_chain = rBlock;
+		    printf("[%d] Agregado a la lista bloque con index %d enviado por %d \n", mpi_rank, rBlock->index,status->MPI_SOURCE);
+		    return true;
+        }
 
-		//TODO: Si el índice del bloque recibido es
-		//el siguiente a mí último bloque actual,
-		//y el bloque anterior apuntado por el recibido es mí último actual,
-		//entonces lo agrego como nuevo último.
-		//printf("[%d] Agregado a la lista bloque con index %d enviado por %d \n", mpi_rank, rBlock->index,status->MPI_SOURCE);
-		//return true;
+        //Si el índice del bloque recibido es el siguiente a mí último bloque actual
+        bool siguienteAlActual = rBlock->index + 1 == last_block_in_chain->index;
+        map<string,Block>::iterator anterior_rBLock = node_blocks.find(rBlock->previous_block_hash);
+        bool encontreAnterior_rBLock = anterior_rBLock != node_blocks.end();
+
+		//CATEDRA: Si el índice del bloque recibido es el siguiente a mí último bloque actual,
+		//          y el bloque anterior apuntado por el recibido es mí último actual, entonces lo agrego como nuevo último.
+        if(siguienteAlActual && encontreAnterior_rBLock && anterior_rBLock->second.index == last_block_in_chain->index){
+            //last_block_in_chain = rBlock;
+		    printf("[%d] Agregado a la lista bloque con index %d enviado por %d \n", mpi_rank, rBlock->index,status->MPI_SOURCE);
+	        return true;
+        }
 
 		//TODO: Si el índice del bloque recibido es
 		//el siguiente a mí último bloque actual,
@@ -101,7 +108,7 @@ bool validate_block_for_chain(const Block *rBlock, const MPI_Status *status){
 //Envía el bloque minado a todos los nodos
 void broadcast_block(const Block *block){
 	//No enviar a mí mismo
-	//TODO: Completar
+	
 	MPI_Request requests[total_nodes-1];
 	MPI_Status status[total_nodes-1];
 	printf("[%d] broadcast_block START\n", mpi_rank);
@@ -243,16 +250,16 @@ int node(){
 				recibeMensajes_cond.wait(lck);
 			}
 
-			//TODO: Recibir mensajes de otros nodos
+			//CATEDRA: Recibir mensajes de otros nodos
 			if(recvFlag != 0){
 				MPI_Irecv(&newBlock, 1, *MPI_BLOCK, MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &request);
 				recvFlag = 0;    
 			}
 
-			//TODO: Si es un mensaje de nuevo bloque, llamar a la función
+			//CATEDRA: Si es un mensaje de nuevo bloque, llamar a la función
 			// validate_block_for_chain con el bloque recibido y el estado de MPI
 
-			//TODO: Si es un mensaje de pedido de cadena,
+			//CATEDRA: Si es un mensaje de pedido de cadena,
 			//responderlo enviando los bloques correspondientes
 			
 			MPI_Test(&request, &recvFlag, &status);
@@ -268,18 +275,18 @@ int node(){
 
 						if(node_blocks.size() == MAX_BLOCKS){
 							//Se llenó la cadena
+                            //TODO: Fijarse como decirle al thread_minador que termine
+                            //      O que use la variable node_blocks para darse cuenta solo
 							break;
-						}else{
-							
 						}
-						
+
 					}else{
 						//Bloque no válido
 					}
 
 				}else if (status.MPI_TAG == TAG_CHAIN_HASH){
 					printf("[%d] Legó un nuevo mesaje: Pedido de cadena\n", mpi_rank);
-					//Acá tengo que enviar los bloques correspondientes
+					//TODO: Acá tengo que enviar los bloques correspondientes (Me piden la cadena)
 				}
 
 				recvFlag = -1;
