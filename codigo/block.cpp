@@ -48,7 +48,7 @@ const char* hex_char_to_bin(char c)
     }
 }
 
-//String hexagesimal a binario
+//String hexadecimal a binario
 string hex_str_to_bin_str(const string& hex)
 {
     string bin;
@@ -89,7 +89,7 @@ string block_to_str(const Block *block){
 
 //Contar el número de ceros en la representación binaria del hash
 bool solves_problem(const string& hash){
-  //cout << "El hash en hexagesimal: " << hash << endl;
+  //cout << "El hash en hexadecimal: " << hash << endl;
   //cout << "El hash en binario:" << hex_str_to_bin_str(hash) << endl;
   string start = string(DEFAULT_DIFFICULTY,'0');
   return hex_str_to_bin_str(hash).compare(0, DEFAULT_DIFFICULTY, start) == 0;

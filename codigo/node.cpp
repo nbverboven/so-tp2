@@ -88,14 +88,14 @@ bool validate_block_for_chain(const Block *rBlock, const MPI_Status *status){
 }
 
 
-//Envia el bloque minado a todos los nodos
+//Envía el bloque minado a todos los nodos
 void broadcast_block(const Block *block){
     //No enviar a mí mismo
     //TODO: Completar
     MPI_Request requests[total_nodes-1];
     MPI_Status status[total_nodes-1];
     printf("[%d] broadcast_block START\n", mpi_rank);
-    //Envío a todos sin que me boloquee ya que después voy a esperar que todos lo hayan 
+    //Envío a todos sin que me bloquee ya que después voy a esperar que todos lo hayan 
     //recibido bien antes de tocar el bloque
     for(int i=0; i<total_nodes; i++){
         if(i!=mpi_rank){
@@ -108,9 +108,10 @@ void broadcast_block(const Block *block){
     }
     
     MPI_Waitall(total_nodes-1, requests, status);
-    //Listo, ahora puedo volver a guardar el bloque que acabé de minar y ponerme a minar de vuelta
+    //Listo, ahora puedo volver a guardar el bloque que acabo de minar y ponerme a minar de vuelta
     printf("[%d] broadcast_block END\n", mpi_rank);
 }
+
 
 //Proof of work
 //TODO: Advertencia: puede tener condiciones de carrera
