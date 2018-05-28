@@ -15,13 +15,13 @@ using namespace std;
 
 //Bloque de la cadena
 struct Block {
-  unsigned int index;
-  unsigned int node_owner_number;
-  unsigned int difficulty;
-  unsigned long int created_at;
-  char nonce[NONCE_SIZE];
-  char previous_block_hash[HASH_SIZE];
-  char block_hash[HASH_SIZE];
+	unsigned int index;
+	unsigned int node_owner_number;
+	unsigned int difficulty;
+	unsigned long int created_at;
+	char nonce[NONCE_SIZE];
+	char previous_block_hash[HASH_SIZE];
+	char block_hash[HASH_SIZE];
 };
 
 bool solves_problem(const string& hash);
