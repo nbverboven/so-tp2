@@ -21,14 +21,4 @@ int node();
 bool validate_block_for_chain(const Block *rBlock, const MPI_Status *status);
 bool verificar_y_migrar_cadena(const Block *rBlock, const MPI_Status *status);
 
-/* Semáforos para evitar que broadcast_block y 
-    node se ejecuten concurrentemente */
-//mutex broadcast_mtx;
-//condition_variable brodcast_cond;
-//atomic<bool> thread_recibeMensajes = false;
-
-mutex recibeMensajes_mtx;
-condition_variable recibeMensajes_cond;
-atomic<bool> thread_broadcast = false;
-
 #endif  // NODE_H

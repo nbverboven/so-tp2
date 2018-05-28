@@ -15,6 +15,14 @@ int total_nodes, mpi_rank;
 Block *last_block_in_chain;
 map<string,Block> node_blocks;
 
+//Semaforos y mutex
+//mutex broadcast_mtx;
+//condition_variable brodcast_cond;
+//atomic<bool> thread_recibeMensajes = false;
+mutex recibeMensajes_mtx;
+condition_variable recibeMensajes_cond;
+atomic<bool> thread_broadcast(false);
+
 
 //Cuando me llega una cadena adelantada, y tengo que pedir los nodos que me faltan
 //Si nos separan más de VALIDATION_BLOCKS bloques de distancia entre las cadenas, se descarta por seguridad
@@ -170,7 +178,7 @@ void* proof_of_work(void *ptr){
 
 				// Despierto al thread que recibe mensajes
 				thread_broadcast = false;
-				recibeMensajes_cond.notify_one();                
+				recibeMensajes_cond.notify_one();
 			}
 		}
 
@@ -275,10 +283,9 @@ int node(){
 				}
 
 				recvFlag = -1;
-			}           
+			}//End mensaje nuevo
 
-
-		}
+		}//End While true
 
 		// free attribute and wait for the other threads
 		pthread_attr_destroy(&thread_attr);
