@@ -28,15 +28,17 @@ atomic<bool> thread_broadcast;
 //Si nos separan más de VALIDATION_BLOCKS bloques de distancia entre las cadenas, se descarta por seguridad
 bool verificar_y_migrar_cadena(const Block *rBlock, const MPI_Status *status){
 
-	//TODO: Enviar mensaje TAG_CHAIN_HASH
+	//CÁTEDRA: Enviar mensaje TAG_CHAIN_HASH
 	Block *blockchain = new Block[VALIDATION_BLOCKS];
-	MPI_Request request;
-	MPI_Isend((void *) rBlock->block_hash, HASH_SIZE, MPI_CHAR, rBlock->node_owner_number, TAG_CHAIN_HASH, MPI_COMM_WORLD, &request);
+	//MPI_send((void *) rBlock->block_hash, HASH_SIZE, MPI_CHAR, rBlock->node_owner_number, TAG_CHAIN_HASH, MPI_COMM_WORLD);
+    MPI_Send((void *) rBlock, 1, *MPI_BLOCK, rBlock->node_owner_number, TAG_CHAIN_HASH, MPI_COMM_WORLD);
 
-	//TODO: Recibir mensaje TAG_CHAIN_RESPONSE
-	MPI_Irecv(blockchain, VALIDATION_BLOCKS, *MPI_BLOCK, rBlock->node_owner_number, TAG_CHAIN_RESPONSE, MPI_COMM_WORLD, &request);
+	//CÁTEDRA: Recibir mensaje TAG_CHAIN_RESPONSE
+    MPI_Status status_recv;
+	MPI_Recv(blockchain, VALIDATION_BLOCKS, *MPI_BLOCK, rBlock->node_owner_number, TAG_CHAIN_RESPONSE, MPI_COMM_WORLD, &status_recv);
+    //Cantidad: status_recv.count
 
-	//TODO: Verificar que los bloques recibidos
+	//CÁTEDRA: Verificar que los bloques recibidos
 	//sean válidos y se puedan acoplar a la cadena
 	bool mismo_hash_rBlock_primero = (strcmp(blockchain[0].block_hash, rBlock->block_hash) == 0);
 	bool mismo_indice_rBlock_primero = (blockchain[0].index == rBlock->index);
@@ -47,6 +49,9 @@ bool verificar_y_migrar_cadena(const Block *rBlock, const MPI_Status *status){
 
 	for (int i = 0; i < VALIDATION_BLOCKS-1 && bloques_en_orden; ++i)
 	{
+        //TODO: OJO!! Porque no siempre son la cantidad de VALIDATION_BLOCKs dado que 
+        //            podrian venir menos si tu index es 3 por ejemplo.. (vienen 2)
+        //            Ver en status_recv.count
 		if (strcmp(blockchain[i].previous_block_hash, blockchain[i+1].block_hash) == 1 ||
 			blockchain[i].index != blockchain[i+1].index + 1)
 		{
@@ -247,6 +252,32 @@ void* proof_of_work(void *ptr){
 	return NULL;
 }
 
+void envio_bloques(Block recvBlock, const MPI_Status *status){
+
+    Block *blockchain = new Block[VALIDATION_BLOCKS];
+    
+    Block *lastBlock = &recvBlock;
+
+    unsigned int i = 0;
+    while(i<VALIDATION_BLOCKS){
+        if(lastBlock != NULL){
+            if(lastBlock->index > 0){
+                map<string,Block>::iterator anterior = node_blocks.find(lastBlock->previous_block_hash);
+                lastBlock = &anterior->second;
+            }else{
+                break;
+            }
+        }
+        blockchain[i] = *lastBlock;
+        i++;
+    }
+
+    MPI_Send((void *) blockchain, i, *MPI_BLOCK, status->MPI_SOURCE, TAG_CHAIN_RESPONSE, MPI_COMM_WORLD);
+    
+    delete []blockchain;
+
+}
+
 
 int node(){
 	//Tomar valor de mpi_rank y de nodos totales
@@ -266,7 +297,7 @@ int node(){
 	last_block_in_chain->created_at = static_cast<unsigned long int> (time(NULL));
 	memset(last_block_in_chain->previous_block_hash,0,HASH_SIZE);
 
-	//TODO: Crear thread para minar
+	//CATEDRA: Crear thread para minar
 	pthread_t thread_minador;
 	pthread_attr_t thread_attr;
 	void *thread_data[4];   //Vector de 4 punteros: total_nodes, mpi_rank, last_block_in_chain, node_blocks;
@@ -285,7 +316,7 @@ int node(){
 	}
 	else {
 		int recvFlag = -1;
-		Block newBlock;
+		Block recvBlock;
 		MPI_Request request;
 		MPI_Status status;
 
@@ -301,7 +332,7 @@ int node(){
 
 			//CATEDRA: Recibir mensajes de otros nodos
 			if(recvFlag != 0){
-				MPI_Irecv(&newBlock, 1, *MPI_BLOCK, MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &request);
+				MPI_Irecv(&recvBlock, 1, *MPI_BLOCK, MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &request);
 				recvFlag = 0;    
 			}
 
@@ -319,7 +350,7 @@ int node(){
 				if(status.MPI_TAG == TAG_NEW_BLOCK){
 					printf("[%d] Llegó un nuevo mesaje: Nuevo bloque minado!\n", mpi_rank);
 
-					const Block toValidate = newBlock;
+					const Block toValidate = recvBlock;
 					if (validate_block_for_chain(&toValidate, &status)){
 
 						if(node_blocks.size() == MAX_BLOCKS){
@@ -329,14 +360,14 @@ int node(){
 							break;
 						}
 
-					}else{
-						//Bloque no válido
 					}
 
 				}else if (status.MPI_TAG == TAG_CHAIN_HASH){
-					printf("[%d] Llegó un nuevo mesaje: Pedido de cadena\n", mpi_rank);
-					//TODO: Acá tengo que enviar los bloques correspondientes (Me piden la cadena)
-				}
+					printf("[%d] Llegó un nuevo mesaje: Pedido de cadena de %d\n", mpi_rank, status.MPI_SOURCE);
+					//Envio los bloques correspondientes (Me piden la cadena)
+                    envio_bloques(recvBlock, &status);
+
+				}//End if enviar cadena
 
 				recvFlag = -1;
 			}//End mensaje nuevo
