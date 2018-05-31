@@ -25,20 +25,21 @@ atomic<bool> thread_broadcast;
 
 //Cuando me llega una cadena adelantada, y tengo que pedir los nodos que me faltan
 //Si nos separan más de VALIDATION_BLOCKS bloques de distancia entre las cadenas, se descarta por seguridad
-bool verificar_y_migrar_cadena(const Block *rBlock, const MPI_Status *status){
-
-	//CÁTEDRA: Enviar mensaje TAG_CHAIN_HASH
+bool verificar_y_migrar_cadena(const Block *rBlock, const MPI_Status *status)
+{
+	// Envío mensaje TAG_CHAIN_HASH
 	Block *blockchain = new Block[VALIDATION_BLOCKS];
-	//MPI_send((void *) rBlock->block_hash, HASH_SIZE, MPI_CHAR, rBlock->node_owner_number, TAG_CHAIN_HASH, MPI_COMM_WORLD);
-    MPI_Send((void *) rBlock, 1, *MPI_BLOCK, rBlock->node_owner_number, TAG_CHAIN_HASH, MPI_COMM_WORLD);
+	MPI_Send((void *) rBlock, 1, *MPI_BLOCK, rBlock->node_owner_number, TAG_CHAIN_HASH, MPI_COMM_WORLD);
 
-	//CÁTEDRA: Recibir mensaje TAG_CHAIN_RESPONSE
-    MPI_Status status_recv;
+	// Recibo mensaje TAG_CHAIN_RESPONSE
+	MPI_Status status_recv;
 	MPI_Recv(blockchain, VALIDATION_BLOCKS, *MPI_BLOCK, rBlock->node_owner_number, TAG_CHAIN_RESPONSE, MPI_COMM_WORLD, &status_recv);
-    //Cantidad: status_recv.count
-    printf("[%d] Recibo cadena de %d \n", mpi_rank, rBlock->node_owner_number);
-	//CÁTEDRA: Verificar que los bloques recibidos
-	//sean válidos y se puedan acoplar a la cadena
+
+	//Cantidad: status_recv.count
+	printf("[%d] Recibo cadena de %d \n", mpi_rank, rBlock->node_owner_number);
+
+	/* Verifico que los bloques recibidos
+	   sean válidos y se puedan acoplar a la cadena */
 	bool mismo_hash_rBlock_primero = (strcmp(blockchain[0].block_hash, rBlock->block_hash) == 0);
 	bool mismo_indice_rBlock_primero = (blockchain[0].index == rBlock->index);
 	string hash_hex_str;
@@ -48,9 +49,9 @@ bool verificar_y_migrar_cadena(const Block *rBlock, const MPI_Status *status){
 
 	for (int i = 0; i < VALIDATION_BLOCKS-1 && bloques_en_orden; ++i)
 	{
-        //TODO: OJO!! Porque no siempre son la cantidad de VALIDATION_BLOCKs dado que 
-        //            podrian venir menos si tu index es 3 por ejemplo.. (vienen 2)
-        //            Ver en status_recv.count
+		/* OJO!! Porque no siempre son la cantidad de VALIDATION_BLOCKs dado que 
+				 podrian venir menos si tu index es 3 por ejemplo.. (vienen 2)
+				 Ver en status_recv.count */
 		if (strcmp(blockchain[i].previous_block_hash, blockchain[i+1].block_hash) == 1 ||
 			blockchain[i].index != blockchain[i+1].index + 1)
 		{
@@ -86,137 +87,140 @@ bool verificar_y_migrar_cadena(const Block *rBlock, const MPI_Status *status){
 		}
 	}
 
-    if(pude_migrar)
-        printf("[%d] Pude migrar la cadena de %d \n", mpi_rank, rBlock->node_owner_number);
-    else{
-        printf("[%d] No pude migrar la cadena de %d:\n",mpi_rank, rBlock->node_owner_number);
-        //printf("    mismo_hash_rBlock_primero:%x\n", mismo_hash_rBlock_primero);
-        //printf("    mismo_indice_rBlock_primero:%x\n", mismo_indice_rBlock_primero);
-        //printf("    hash_valido_primero:%x\n", hash_valido_primero);
-        //printf("    bloques_en_orden:%x\n", bloques_en_orden);
-    }
-        
+	if(pude_migrar)
+	{
+		printf("[%d] Pude migrar la cadena de %d \n", mpi_rank, rBlock->node_owner_number);
+	}
+	else
+	{
+		printf("[%d] No pude migrar la cadena de %d:\n",mpi_rank, rBlock->node_owner_number);
+	}
+		
 
 	delete []blockchain;
 	return pude_migrar;
 }
 
 
-//Verifica que el bloque tenga que ser incluido en la cadena, y lo agrega si corresponde
-bool validate_block_for_chain(const Block *rBlock, const MPI_Status *status){
+// Verifica que el bloque tenga que ser incluido en la cadena, y lo agrega si corresponde
+bool validate_block_for_chain(const Block *rBlock, const MPI_Status *status)
+{
+	// Mutex con proof_of_work para que no cambien el last_block_in_chain al mismo tiempo
+	lastBlockInChain_change_mtx.lock(); 
+
 	if(valid_new_block(rBlock))
 	{
-        // Mutex con proof_of_work para que no cambien el last_block_in_chain al mismo tiempo
-        lastBlockInChain_change_mtx.lock(); 
-
 		/* Agrego el bloque al diccionario, aunque esto no
 		   necesariamente lo agrega a la cadena */
 		node_blocks[string(rBlock->block_hash)] = *rBlock;
 
-		/* CATEDRA: Si el índice del bloque recibido es 1 y mí último bloque actual 
+		/* Si el índice del bloque recibido es 1 y mí último bloque actual 
 		   tiene índice 0, entonces lo agrego como nuevo último. */
 		if(rBlock->index == 1 && last_block_in_chain->index == 0)
 		{
 			*last_block_in_chain = *rBlock;
 			printf("[%d] Agregado a la lista bloque con index %d enviado por %d \n", mpi_rank, rBlock->index,status->MPI_SOURCE);
+			lastBlockInChain_change_mtx.unlock(); //Fin de zona crítica
 
-            lastBlockInChain_change_mtx.unlock(); //Fin de zona crítica
 			return true;
 		}
 
-		//Si el índice del bloque recibido es el siguiente a mí último bloque actual
+		// Si el índice del bloque recibido es el siguiente a mí último bloque actual
 		bool siguienteAlActual = (rBlock->index == last_block_in_chain->index + 1);
 		map<string,Block>::iterator anterior_rBLock = node_blocks.find(rBlock->previous_block_hash);
 		bool encontreAnterior_rBLock = (anterior_rBLock != node_blocks.end());
 
-		/* CÁTEDRA: Si el índice del bloque recibido es el siguiente a mí último bloque 
+		/* Si el índice del bloque recibido es el siguiente a mí último bloque 
 		   actual, y el bloque anterior apuntado por el recibido es mí último actual, 
 		   entonces lo agrego como nuevo último. */
 		if(siguienteAlActual && encontreAnterior_rBLock && anterior_rBLock->second.index == last_block_in_chain->index)
 		{
 			*last_block_in_chain = *rBlock;
 			printf("[%d] Agregado a la lista bloque con index %d enviado por %d \n", mpi_rank, rBlock->index,status->MPI_SOURCE);
+			lastBlockInChain_change_mtx.unlock(); //Fin de zona crítica
 
-            lastBlockInChain_change_mtx.unlock(); //Fin de zona crítica
 			return true;
 		}
 
-		/* CÁTEDRA: Si el índice del bloque recibido es el siguiente a mí último bloque 
+		/* Si el índice del bloque recibido es el siguiente a mí último bloque 
 		   actual, pero el bloque anterior apuntado por el recibido no es mí último 
 		   actual, entonces hay una blockchain más larga que la mía. */
-		if(siguienteAlActual && !encontreAnterior_rBLock){
+		if(siguienteAlActual && !encontreAnterior_rBLock)
+		{
 			printf("[%d] Perdí la carrera por uno (%d) contra %d \n", mpi_rank, rBlock->index, status->MPI_SOURCE);
 			bool res = verificar_y_migrar_cadena(rBlock,status);
+			lastBlockInChain_change_mtx.unlock(); //Fin de zona crítica
 
-            lastBlockInChain_change_mtx.unlock(); //Fin de zona crítica
 			return res;
 		}
 
-		/* CÁTEDRA: Si el índice del bloque recibido es igual al índice de mi último bloque 
+		/* Si el índice del bloque recibido es igual al índice de mi último bloque 
 		   actual, entonces hay dos posibles forks de la blockchain pero mantengo la mía */
-		if(rBlock->index == last_block_in_chain->index){
+		if(rBlock->index == last_block_in_chain->index)
+		{
 			printf("[%d] Conflicto suave: Conflicto de branch (%d) contra %d \n",mpi_rank,rBlock->index,status->MPI_SOURCE);
+			lastBlockInChain_change_mtx.unlock(); //Fin de zona crítica
 
-            lastBlockInChain_change_mtx.unlock(); //Fin de zona crítica
 			return false;
 		}
 
-		/* CÁTEDRA: Si el índice del bloque recibido es anterior al índice de mi último bloque 
+		/* Si el índice del bloque recibido es anterior al índice de mi último bloque 
 		   actual, entonces lo descarto porque asumo que mi cadena es la que está quedando 
 		   preservada. */
-		if(rBlock->index < last_block_in_chain->index){
+		if(rBlock->index < last_block_in_chain->index)
+		{
 			printf("[%d] Conflicto suave: Descarto el bloque (%d vs %d) contra %d \n",mpi_rank,rBlock->index,last_block_in_chain->index, status->MPI_SOURCE);
+			lastBlockInChain_change_mtx.unlock(); //Fin de zona crítica
 
-            lastBlockInChain_change_mtx.unlock(); //Fin de zona crítica
 			return false;
 		}
 
-		/* CÁTEDRA: Si el índice del bloque recibido está más de una posición adelantada a mi 
+		/* Si el índice del bloque recibido está más de una posición adelantada a mi 
 		   último bloque actual, entonces me conviene abandonar mi blockchain actual. */
 		if(rBlock->index-1 > last_block_in_chain->index){
 			printf("[%d] Perdí la carrera por varios contra %d \n", mpi_rank, status->MPI_SOURCE);
 			bool res = verificar_y_migrar_cadena(rBlock,status);
+			lastBlockInChain_change_mtx.unlock(); //Fin de zona crítica
 
-            lastBlockInChain_change_mtx.unlock(); //Fin de zona crítica
 			return res;
 		}
-
-        lastBlockInChain_change_mtx.unlock(); //Fin de zona crítica
 	}
 
+	lastBlockInChain_change_mtx.unlock(); //Fin de zona crítica
 	printf("[%d] Error duro: Descarto el bloque recibido de %d porque no es válido \n",mpi_rank,status->MPI_SOURCE);
+
 	return false;
 }
 
-int getRandom(){
-    random_device rd; // obtain a random number from hardware
-    mt19937 eng(rd()); // seed the generator
-    uniform_int_distribution<> distr(0, total_nodes); // define the range
-    return distr(eng);
+int getRandom() {
+	random_device rd; // obtain a random number from hardware
+	mt19937 eng(rd()); // seed the generator
+	uniform_int_distribution<> distr(0, total_nodes); // define the range
+	return distr(eng);
 }
 
 
-//Envía el bloque minado a todos los nodos
-void broadcast_block(const Block *block){
-	//No enviar a mí mismo
-	
+// Envía el bloque minado a todos los nodos
+void broadcast_block(const Block *block) {
+	// No enviar a mí mismo
 	MPI_Request requests[total_nodes-1];
 	MPI_Status status[total_nodes-1];
 	printf("[%d] broadcast_block Bloque: %d \n", mpi_rank, block->index);
-	//Envío a todos sin que me bloquee ya que después voy a esperar que todos lo hayan 
-	//recibido bien antes de tocar el bloque
-    int orden = getRandom();
+
+	/* Envío a todos sin que me bloquee ya que después voy a esperar que 
+	   todos lo hayan recibido bien antes de tocar el bloque */
+	int orden = getRandom();
 	for(int i=0; i<total_nodes; i++){
-        int orden_normalizado =orden % total_nodes;
+		int orden_normalizado =orden % total_nodes;
 		if(orden_normalizado!=mpi_rank){
-            int j = orden_normalizado;
+			int j = orden_normalizado;
 			if(j>mpi_rank) //porque en request tengo que tener solo los total_nodes-1 requests
 				j--;
 
-            printf("[%d] broadcast_block a %d \n", mpi_rank, orden_normalizado);
+			printf("[%d] broadcast_block a %d \n", mpi_rank, orden_normalizado);
 			MPI_Isend((void *)block, 1, *MPI_BLOCK, orden_normalizado, TAG_NEW_BLOCK, MPI_COMM_WORLD, &requests[j]);
 		}
-        orden++;
+		orden++;
 	}
 	
 	MPI_Waitall(total_nodes-1, requests, status);
@@ -227,15 +231,15 @@ void broadcast_block(const Block *block){
 
 //Proof of work
 //TODO: Advertencia: puede tener condiciones de carrera
-void* proof_of_work(void *ptr){
+void* proof_of_work(void *ptr) {
 	string hash_hex_str;
 	Block block;
 	unsigned int mined_blocks = 0;
 	while(true){
-        if(last_block_in_chain->index >= MAX_BLOCKS){
-            printf("[%d] Maxima cantidad de bloques alcanzada, termino de minar \n",mpi_rank);
-            break;
-        }
+		if(last_block_in_chain->index >= MAX_BLOCKS){
+			printf("[%d] Maxima cantidad de bloques alcanzada, termino de minar \n",mpi_rank);
+			break;
+		}
 
 		block = *last_block_in_chain;
 
@@ -255,8 +259,8 @@ void* proof_of_work(void *ptr){
 		//Contar la cantidad de ceros iniciales (con el nuevo nonce)
 		if(solves_problem(hash_hex_str)){
 
-            // Mutex con validate_block_for_chain para que no cambien el last_block_in_chain al mismo tiempo
-            lastBlockInChain_change_mtx.lock();
+			// Mutex con validate_block_for_chain para que no cambien el last_block_in_chain al mismo tiempo
+			lastBlockInChain_change_mtx.lock();
 
 			//Verifico que no haya cambiado mientras calculaba
 			if(last_block_in_chain->index < block.index){
@@ -277,10 +281,8 @@ void* proof_of_work(void *ptr){
 				recibeMensajes_cond.notify_one();
 			}
 
-            lastBlockInChain_change_mtx.unlock(); //Fin de zona crítica
-
+			lastBlockInChain_change_mtx.unlock(); //Fin de zona crítica
 		}
-
 	}
 
 	return NULL;
@@ -288,28 +290,26 @@ void* proof_of_work(void *ptr){
 
 void envio_bloques(Block recvBlock, const MPI_Status *status){
 
-    Block *blockchain = new Block[VALIDATION_BLOCKS];
-    
-    Block *lastBlock = &recvBlock;
+	Block *blockchain = new Block[VALIDATION_BLOCKS];
+	Block *lastBlock = &recvBlock;
 
-    unsigned int i = 0;
-    while(i<VALIDATION_BLOCKS){
-        blockchain[i] = *lastBlock;
-        
-        if(lastBlock->index > 1){
-            map<string,Block>::iterator anterior = node_blocks.find(lastBlock->previous_block_hash);
-            lastBlock = &anterior->second;
-        }else{
-            break;
-        }
+	unsigned int i = 0;
+	while(i<VALIDATION_BLOCKS){
+		blockchain[i] = *lastBlock;
+		
+		if(lastBlock->index > 1){
+			map<string,Block>::iterator anterior = node_blocks.find(lastBlock->previous_block_hash);
+			lastBlock = &anterior->second;
+		}else{
+			break;
+		}
 
-        i++;
-    }
+		i++;
+	}
 
-    MPI_Send((void *) blockchain, i, *MPI_BLOCK, status->MPI_SOURCE, TAG_CHAIN_RESPONSE, MPI_COMM_WORLD);
-    
-    delete []blockchain;
+	MPI_Send((void *) blockchain, i, *MPI_BLOCK, status->MPI_SOURCE, TAG_CHAIN_RESPONSE, MPI_COMM_WORLD);
 
+	delete []blockchain;
 }
 
 
@@ -351,10 +351,10 @@ int node(){
 
 		while (true) {
 
-            if(last_block_in_chain->index >= MAX_BLOCKS){
-                printf("[%d] Maxima cantidad de bloques alcanzada, no recibo mas mensajes \n",mpi_rank);
-                break;
-            }
+			if(last_block_in_chain->index >= MAX_BLOCKS){
+				printf("[%d] Maxima cantidad de bloques alcanzada, no recibo mas mensajes \n",mpi_rank);
+				break;
+			}
 			
 			/* Me fijo si el semáforo me indica si se esta haciendo un broadcast de 
 			   un nuevo nodo. Si es así espero a que se libere */
@@ -364,23 +364,21 @@ int node(){
 				recibeMensajes_cond.wait(lck);
 			}
 
-			//CATEDRA: Recibir mensajes de otros nodos
+			// Recibo mensajes de otros nodos
 			if(recvFlag != 0){
 				MPI_Irecv(&recvBlock, 1, *MPI_BLOCK, MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &request);
 				recvFlag = 0;    
 			}
 
-			/* CATEDRA: Si es un mensaje de nuevo bloque, llamar a la función
-			   validate_block_for_chain con el bloque recibido y el estado de MPI */
-
-			/* CATEDRA: Si es un mensaje de pedido de cadena, responderlo enviando
-			   los bloques correspondientes */
+			/* Si es un mensaje de nuevo bloque, llamar a la función validate_block_for_chain 
+			   con el bloque recibido y el estado de MPI.
+			   Si es un mensaje de pedido de cadena, respondo enviando los bloques correspondientes */
 		
 			MPI_Test(&request, &recvFlag, &status);
 
 			//Si tengo un mensaje nuevo y no es mio (de mi thread)
 			if (recvFlag != 0 && status.MPI_SOURCE != mpi_rank) {
-				
+
 				if(status.MPI_TAG == TAG_NEW_BLOCK){
 					printf("[%d] Llegó un nuevo mesaje: Nuevo bloque minado!\n", mpi_rank);
 
@@ -388,11 +386,11 @@ int node(){
 					if (validate_block_for_chain(&toValidate, &status)){
 
 					}
-
-				}else if (status.MPI_TAG == TAG_CHAIN_HASH){
+				}
+				else if (status.MPI_TAG == TAG_CHAIN_HASH){
 					printf("[%d] Llegó un nuevo mesaje: Pedido de cadena de %d\n", mpi_rank, status.MPI_SOURCE);
 					//Envio los bloques correspondientes (Me piden la cadena)
-                    envio_bloques(recvBlock, &status);
+					envio_bloques(recvBlock, &status);
 
 				}//End if enviar cadena
 
@@ -410,7 +408,7 @@ int node(){
 		}
 	}
 
-    printf("[%d] Fin de ejecución \n",mpi_rank);
+	printf("[%d] Fin de ejecución \n",mpi_rank);
 
 	delete last_block_in_chain;
 	return 0;
