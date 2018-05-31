@@ -10,6 +10,7 @@
 #include <map>
 #include <mutex>
 #include <condition_variable>
+#include <random>
 
 int total_nodes, mpi_rank;
 Block *last_block_in_chain;
@@ -37,7 +38,7 @@ bool verificar_y_migrar_cadena(const Block *rBlock, const MPI_Status *status){
     MPI_Status status_recv;
 	MPI_Recv(blockchain, VALIDATION_BLOCKS, *MPI_BLOCK, rBlock->node_owner_number, TAG_CHAIN_RESPONSE, MPI_COMM_WORLD, &status_recv);
     //Cantidad: status_recv.count
-
+    printf("[%d] Recibo cadena de %d \n", mpi_rank, rBlock->node_owner_number);
 	//CÁTEDRA: Verificar que los bloques recibidos
 	//sean válidos y se puedan acoplar a la cadena
 	bool mismo_hash_rBlock_primero = (strcmp(blockchain[0].block_hash, rBlock->block_hash) == 0);
@@ -86,6 +87,12 @@ bool verificar_y_migrar_cadena(const Block *rBlock, const MPI_Status *status){
 			}
 		}
 	}
+
+    if(pude_migrar)
+        printf("[%d] Pude migrar la cadena de %d \n", mpi_rank, rBlock->node_owner_number);
+    else
+        printf("[%d] No pude migrar la cadena de %d \n", mpi_rank, rBlock->node_owner_number);
+        
 
 	delete []blockchain;
 	return pude_migrar;
@@ -161,6 +168,13 @@ bool validate_block_for_chain(const Block *rBlock, const MPI_Status *status){
 	return false;
 }
 
+int getRandom(){
+    random_device rd; // obtain a random number from hardware
+    mt19937 eng(rd()); // seed the generator
+    uniform_int_distribution<> distr(0, total_nodes); // define the range
+    return distr(eng);
+}
+
 
 //Envía el bloque minado a todos los nodos
 void broadcast_block(const Block *block){
@@ -168,39 +182,40 @@ void broadcast_block(const Block *block){
 	
 	MPI_Request requests[total_nodes-1];
 	MPI_Status status[total_nodes-1];
-	printf("[%d] broadcast_block START\n", mpi_rank);
+	printf("[%d] broadcast_block Bloque: %d \n", mpi_rank, block->index);
 	//Envío a todos sin que me bloquee ya que después voy a esperar que todos lo hayan 
 	//recibido bien antes de tocar el bloque
+    int orden = getRandom();
 	for(int i=0; i<total_nodes; i++){
-		if(i!=mpi_rank){
-			int j=i;
+        int orden_normalizado =orden % total_nodes;
+		if(orden_normalizado!=mpi_rank){
+            int j = orden_normalizado;
 			if(j>mpi_rank) //porque en request tengo que tener solo los total_nodes-1 requests
 				j--;
 
-			MPI_Isend((void *)block, 1, *MPI_BLOCK, i, TAG_NEW_BLOCK, MPI_COMM_WORLD, &requests[j]);
+            printf("[%d] broadcast_block a %d \n", mpi_rank, orden_normalizado);
+			MPI_Isend((void *)block, 1, *MPI_BLOCK, orden_normalizado, TAG_NEW_BLOCK, MPI_COMM_WORLD, &requests[j]);
 		}
+        orden++;
 	}
 	
 	MPI_Waitall(total_nodes-1, requests, status);
 
 	//Listo, ahora puedo volver a guardar el bloque que acabo de minar y ponerme a minar de vuelta
-	printf("[%d] broadcast_block END\n", mpi_rank);
 }
 
 
 //Proof of work
 //TODO: Advertencia: puede tener condiciones de carrera
 void* proof_of_work(void *ptr){
-	//Vector de 4 punteros: total_nodes, mpi_rank, last_block_in_chain, node_blocks;
-	// &total_nodes = (int *)ptr[0];
-	// &mpi_rank = (int *) ptr[1];
-	// last_block_in_chain = (Block *) ptr[2];
-	// &node_blocks = *ptr[3];
-
 	string hash_hex_str;
 	Block block;
 	unsigned int mined_blocks = 0;
 	while(true){
+        if(last_block_in_chain->index >= MAX_BLOCKS){
+            printf("[%d] Maxima cantidad de bloques alcanzada, termino de minar \n",mpi_rank);
+            break;
+        }
 
 		block = *last_block_in_chain;
 
@@ -228,14 +243,7 @@ void* proof_of_work(void *ptr){
 				node_blocks[hash_hex_str] = *last_block_in_chain;
 				printf("[%d] Agregué un producido con index %d \n",mpi_rank,last_block_in_chain->index);
 
-				//TODO: Mientras comunico, no responder mensajes de nuevos nodos
-
-				/* Me fijo si el semáforo me indica si node esta recibiendo
-					un mensaje. Si es así, espero a que se libere */
-				//unique_lock<mutex> lck(broadcast_mtx);
-				//while (thread_recibeMensajes){
-				//    broadcast_cond.wait(lck);
-				//}
+				//CÁTEDRA: Mientras comunico, no responder mensajes de nuevos nodos
 
 				thread_broadcast = true;
 				
@@ -300,18 +308,13 @@ int node(){
 	//CATEDRA: Crear thread para minar
 	pthread_t thread_minador;
 	pthread_attr_t thread_attr;
-	void *thread_data[4];   //Vector de 4 punteros: total_nodes, mpi_rank, last_block_in_chain, node_blocks;
-	thread_data[0] = &total_nodes;
-	thread_data[1] = &mpi_rank;
-	thread_data[2] = last_block_in_chain;
-	thread_data[3] = &node_blocks;
 
 	// Initialize and set thread joinable
 	pthread_attr_init(&thread_attr);
 	pthread_attr_setdetachstate(&thread_attr, PTHREAD_CREATE_JOINABLE);
 
-	if (pthread_create(&thread_minador, NULL, proof_of_work, &thread_data)) {
-		printf("Error: unable to create thread \n");
+	if (pthread_create(&thread_minador, NULL, proof_of_work, NULL)) {
+		printf("[%d] Error: unable to create thread \n", mpi_rank);
 		return -1;
 	}
 	else {
@@ -321,6 +324,11 @@ int node(){
 		MPI_Status status;
 
 		while (true) {
+
+            if(last_block_in_chain->index >= MAX_BLOCKS){
+                printf("[%d] Maxima cantidad de bloques alcanzada, no recibo mas mensajes \n",mpi_rank);
+                break;
+            }
 			
 			/* Me fijo si el semáforo me indica si se esta haciendo un broadcast de 
 			   un nuevo nodo. Si es así espero a que se libere */
@@ -351,17 +359,11 @@ int node(){
 					printf("[%d] Llegó un nuevo mesaje: Nuevo bloque minado!\n", mpi_rank);
 
 					const Block toValidate = recvBlock;
+                    if(mpi_rank != 2 || (mpi_rank==2 && last_block_in_chain->index >2)){
 					if (validate_block_for_chain(&toValidate, &status)){
 
-						if(node_blocks.size() == MAX_BLOCKS){
-							//Se llenó la cadena
-							//TODO: Fijarse como decirle al thread_minador que termine
-							//      O que use la variable node_blocks para darse cuenta solo
-							break;
-						}
-
 					}
-
+                    }
 				}else if (status.MPI_TAG == TAG_CHAIN_HASH){
 					printf("[%d] Llegó un nuevo mesaje: Pedido de cadena de %d\n", mpi_rank, status.MPI_SOURCE);
 					//Envio los bloques correspondientes (Me piden la cadena)
@@ -378,11 +380,12 @@ int node(){
 		pthread_attr_destroy(&thread_attr);
 
 		if (pthread_join(thread_minador, NULL)) {
-			printf("Error: unable to join thread \n");
+			printf("[%d] Error: unable to join thread \n", mpi_rank);
 			return -1;
 		}
-
 	}
+
+    printf("[%d] Fin de ejecución \n",mpi_rank);
 
 	delete last_block_in_chain;
 	return 0;
