@@ -364,11 +364,10 @@ int node(){
 					printf("[%d] Llegó un nuevo mesaje: Nuevo bloque minado!\n", mpi_rank);
 
 					const Block toValidate = recvBlock;
-                    if(mpi_rank != 2 || (mpi_rank==2 && last_block_in_chain->index >2)){
 					if (validate_block_for_chain(&toValidate, &status)){
 
 					}
-                    }
+                    
 				}else if (status.MPI_TAG == TAG_CHAIN_HASH){
 					printf("[%d] Llegó un nuevo mesaje: Pedido de cadena de %d\n", mpi_rank, status.MPI_SOURCE);
 					//Envio los bloques correspondientes (Me piden la cadena)
