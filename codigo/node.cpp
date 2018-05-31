@@ -47,11 +47,8 @@ bool verificar_y_migrar_cadena(const Block *rBlock, const MPI_Status *status)
 	bool hash_valido_primero = (hash_hex_str.compare(blockchain[0].block_hash) == 0);
 	bool bloques_en_orden = true;
 
-	for (int i = 0; i < VALIDATION_BLOCKS-1 && bloques_en_orden; ++i)
+	for (int i = 0; i < status_recv.count-1 && bloques_en_orden; ++i)
 	{
-		/* OJO!! Porque no siempre son la cantidad de VALIDATION_BLOCKs dado que 
-				 podrian venir menos si tu index es 3 por ejemplo.. (vienen 2)
-				 Ver en status_recv.count */
 		if (strcmp(blockchain[i].previous_block_hash, blockchain[i+1].block_hash) == 1 ||
 			blockchain[i].index != blockchain[i+1].index + 1)
 		{
@@ -65,7 +62,7 @@ bool verificar_y_migrar_cadena(const Block *rBlock, const MPI_Status *status)
 		hash_valido_primero && bloques_en_orden)
 	{
 		// Veo si puedo reconstruir la cadena
-		for (int i = 0; i < VALIDATION_BLOCKS && !pude_migrar; ++i)
+		for (int i = 0; i < status_recv.count && !pude_migrar; ++i)
 		{
 			/* Para cada elemento de la cadena que me mandaron, me 
 			   fijo si ya lo tengo en node_blocks. Si ecuentro uno,
