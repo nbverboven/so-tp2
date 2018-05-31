@@ -17,9 +17,7 @@ Block *last_block_in_chain;
 map<string,Block> node_blocks;
 
 //Semaforos y mutex
-//mutex broadcast_mtx;
-//condition_variable brodcast_cond;
-//atomic<bool> thread_recibeMensajes = false;
+mutex lastBlockInChain_change_mtx;
 mutex recibeMensajes_mtx;
 condition_variable recibeMensajes_cond;
 atomic<bool> thread_broadcast;
@@ -108,6 +106,9 @@ bool verificar_y_migrar_cadena(const Block *rBlock, const MPI_Status *status){
 bool validate_block_for_chain(const Block *rBlock, const MPI_Status *status){
 	if(valid_new_block(rBlock))
 	{
+        // Mutex con proof_of_work para que no cambien el last_block_in_chain al mismo tiempo
+        lastBlockInChain_change_mtx.lock(); 
+
 		/* Agrego el bloque al diccionario, aunque esto no
 		   necesariamente lo agrega a la cadena */
 		node_blocks[string(rBlock->block_hash)] = *rBlock;
@@ -118,6 +119,8 @@ bool validate_block_for_chain(const Block *rBlock, const MPI_Status *status){
 		{
 			*last_block_in_chain = *rBlock;
 			printf("[%d] Agregado a la lista bloque con index %d enviado por %d \n", mpi_rank, rBlock->index,status->MPI_SOURCE);
+
+            lastBlockInChain_change_mtx.unlock(); //Fin de zona crítica
 			return true;
 		}
 
@@ -133,6 +136,8 @@ bool validate_block_for_chain(const Block *rBlock, const MPI_Status *status){
 		{
 			*last_block_in_chain = *rBlock;
 			printf("[%d] Agregado a la lista bloque con index %d enviado por %d \n", mpi_rank, rBlock->index,status->MPI_SOURCE);
+
+            lastBlockInChain_change_mtx.unlock(); //Fin de zona crítica
 			return true;
 		}
 
@@ -142,6 +147,8 @@ bool validate_block_for_chain(const Block *rBlock, const MPI_Status *status){
 		if(siguienteAlActual && !encontreAnterior_rBLock){
 			printf("[%d] Perdí la carrera por uno (%d) contra %d \n", mpi_rank, rBlock->index, status->MPI_SOURCE);
 			bool res = verificar_y_migrar_cadena(rBlock,status);
+
+            lastBlockInChain_change_mtx.unlock(); //Fin de zona crítica
 			return res;
 		}
 
@@ -149,6 +156,8 @@ bool validate_block_for_chain(const Block *rBlock, const MPI_Status *status){
 		   actual, entonces hay dos posibles forks de la blockchain pero mantengo la mía */
 		if(rBlock->index == last_block_in_chain->index){
 			printf("[%d] Conflicto suave: Conflicto de branch (%d) contra %d \n",mpi_rank,rBlock->index,status->MPI_SOURCE);
+
+            lastBlockInChain_change_mtx.unlock(); //Fin de zona crítica
 			return false;
 		}
 
@@ -157,6 +166,8 @@ bool validate_block_for_chain(const Block *rBlock, const MPI_Status *status){
 		   preservada. */
 		if(rBlock->index < last_block_in_chain->index){
 			printf("[%d] Conflicto suave: Descarto el bloque (%d vs %d) contra %d \n",mpi_rank,rBlock->index,last_block_in_chain->index, status->MPI_SOURCE);
+
+            lastBlockInChain_change_mtx.unlock(); //Fin de zona crítica
 			return false;
 		}
 
@@ -165,8 +176,12 @@ bool validate_block_for_chain(const Block *rBlock, const MPI_Status *status){
 		if(rBlock->index-1 > last_block_in_chain->index){
 			printf("[%d] Perdí la carrera por varios contra %d \n", mpi_rank, status->MPI_SOURCE);
 			bool res = verificar_y_migrar_cadena(rBlock,status);
+
+            lastBlockInChain_change_mtx.unlock(); //Fin de zona crítica
 			return res;
 		}
+
+        lastBlockInChain_change_mtx.unlock(); //Fin de zona crítica
 	}
 
 	printf("[%d] Error duro: Descarto el bloque recibido de %d porque no es válido \n",mpi_rank,status->MPI_SOURCE);
@@ -240,6 +255,9 @@ void* proof_of_work(void *ptr){
 		//Contar la cantidad de ceros iniciales (con el nuevo nonce)
 		if(solves_problem(hash_hex_str)){
 
+            // Mutex con validate_block_for_chain para que no cambien el last_block_in_chain al mismo tiempo
+            lastBlockInChain_change_mtx.lock();
+
 			//Verifico que no haya cambiado mientras calculaba
 			if(last_block_in_chain->index < block.index){
 				mined_blocks += 1;
@@ -258,6 +276,9 @@ void* proof_of_work(void *ptr){
 				thread_broadcast = false;
 				recibeMensajes_cond.notify_one();
 			}
+
+            lastBlockInChain_change_mtx.unlock(); //Fin de zona crítica
+
 		}
 
 	}
@@ -367,7 +388,7 @@ int node(){
 					if (validate_block_for_chain(&toValidate, &status)){
 
 					}
-                    
+
 				}else if (status.MPI_TAG == TAG_CHAIN_HASH){
 					printf("[%d] Llegó un nuevo mesaje: Pedido de cadena de %d\n", mpi_rank, status.MPI_SOURCE);
 					//Envio los bloques correspondientes (Me piden la cadena)
