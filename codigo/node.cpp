@@ -105,11 +105,12 @@ bool verificar_y_migrar_cadena(const Block *rBlock, const MPI_Status *status)
 // Verifica que el bloque tenga que ser incluido en la cadena, y lo agrega si corresponde
 bool validate_block_for_chain(const Block *rBlock, const MPI_Status *status)
 {
-	// Mutex con proof_of_work para que no cambien el last_block_in_chain al mismo tiempo
-	lastBlockInChain_change_mtx.lock(); 
 
 	if(valid_new_block(rBlock))
 	{
+        // Mutex con proof_of_work para que no cambien el last_block_in_chain al mismo tiempo
+	    lastBlockInChain_change_mtx.lock(); 
+
 		/* Agrego el bloque al diccionario, aunque esto no
 		   necesariamente lo agrega a la cadena */
 		node_blocks[string(rBlock->block_hash)] = *rBlock;
