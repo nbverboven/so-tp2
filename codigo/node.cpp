@@ -90,8 +90,13 @@ bool verificar_y_migrar_cadena(const Block *rBlock, const MPI_Status *status){
 
     if(pude_migrar)
         printf("[%d] Pude migrar la cadena de %d \n", mpi_rank, rBlock->node_owner_number);
-    else
-        printf("[%d] No pude migrar la cadena de %d \n", mpi_rank, rBlock->node_owner_number);
+    else{
+        printf("[%d] No pude migrar la cadena de %d:\n",mpi_rank, rBlock->node_owner_number);
+        //printf("    mismo_hash_rBlock_primero:%x\n", mismo_hash_rBlock_primero);
+        //printf("    mismo_indice_rBlock_primero:%x\n", mismo_indice_rBlock_primero);
+        //printf("    hash_valido_primero:%x\n", hash_valido_primero);
+        //printf("    bloques_en_orden:%x\n", bloques_en_orden);
+    }
         
 
 	delete []blockchain;
@@ -268,15 +273,15 @@ void envio_bloques(Block recvBlock, const MPI_Status *status){
 
     unsigned int i = 0;
     while(i<VALIDATION_BLOCKS){
-        if(lastBlock != NULL){
-            if(lastBlock->index > 0){
-                map<string,Block>::iterator anterior = node_blocks.find(lastBlock->previous_block_hash);
-                lastBlock = &anterior->second;
-            }else{
-                break;
-            }
-        }
         blockchain[i] = *lastBlock;
+        
+        if(lastBlock->index > 1){
+            map<string,Block>::iterator anterior = node_blocks.find(lastBlock->previous_block_hash);
+            lastBlock = &anterior->second;
+        }else{
+            break;
+        }
+
         i++;
     }
 
