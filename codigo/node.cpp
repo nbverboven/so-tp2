@@ -184,7 +184,6 @@ bool validate_block_for_chain(const Block *rBlock, const MPI_Status *status)
 		}
 	}
 
-	lastBlockInChain_change_mtx.unlock(); //Fin de zona crítica
 	printf("[%d] Error duro: Descarto el bloque recibido de %d porque no es válido \n",mpi_rank,status->MPI_SOURCE);
 
 	return false;
