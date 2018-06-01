@@ -234,12 +234,7 @@ void* proof_of_work(void *ptr) {
 	string hash_hex_str;
 	Block block;
 	unsigned int mined_blocks = 0;
-	while(true){
-		if(last_block_in_chain->index >= MAX_BLOCKS){
-			printf("[%d] Maxima cantidad de bloques alcanzada, termino de minar \n",mpi_rank);
-			break;
-		}
-
+	while (last_block_in_chain->index < MAX_BLOCKS) {
 		block = *last_block_in_chain;
 
 		//Preparar nuevo bloque
@@ -284,25 +279,21 @@ void* proof_of_work(void *ptr) {
 		}
 	}
 
+	printf("[%d] Maxima cantidad de bloques alcanzada, termino de minar \n",mpi_rank);
+
 	return NULL;
 }
 
-void envio_bloques(Block recvBlock, const MPI_Status *status){
+void envio_bloques(Block *recvBlock, const MPI_Status *status){
 
 	Block *blockchain = new Block[VALIDATION_BLOCKS];
-	Block *lastBlock = &recvBlock;
+	Block *lastBlock = recvBlock;
 
 	unsigned int i = 0;
-	while(i<VALIDATION_BLOCKS){
+	while (i < VALIDATION_BLOCKS && !(i > 0 && lastBlock->index < 1)) {
 		blockchain[i] = *lastBlock;
-		
-		if(lastBlock->index > 1){
-			map<string,Block>::iterator anterior = node_blocks.find(lastBlock->previous_block_hash);
-			lastBlock = &anterior->second;
-		}else{
-			break;
-		}
-
+		map<string,Block>::iterator anterior = node_blocks.find(lastBlock->previous_block_hash);
+		lastBlock = &anterior->second;
 		i++;
 	}
 
@@ -348,13 +339,7 @@ int node(){
 		MPI_Request request;
 		MPI_Status status;
 
-		while (true) {
-
-			if(last_block_in_chain->index >= MAX_BLOCKS){
-				printf("[%d] Maxima cantidad de bloques alcanzada, no recibo mas mensajes \n",mpi_rank);
-				break;
-			}
-			
+		while (last_block_in_chain->index < MAX_BLOCKS) {
 			/* Me fijo si el semáforo me indica si se esta haciendo un broadcast de 
 			   un nuevo nodo. Si es así espero a que se libere */
 			unique_lock<mutex> lck(recibeMensajes_mtx);
@@ -382,14 +367,12 @@ int node(){
 					printf("[%d] Llegó un nuevo mesaje: Nuevo bloque minado!\n", mpi_rank);
 
 					const Block toValidate = recvBlock;
-					if (validate_block_for_chain(&toValidate, &status)){
-
-					}
+					validate_block_for_chain(&toValidate, &status);
 				}
 				else if (status.MPI_TAG == TAG_CHAIN_HASH){
 					printf("[%d] Llegó un nuevo mesaje: Pedido de cadena de %d\n", mpi_rank, status.MPI_SOURCE);
 					//Envio los bloques correspondientes (Me piden la cadena)
-					envio_bloques(recvBlock, &status);
+					envio_bloques(&recvBlock, &status);
 
 				}//End if enviar cadena
 
@@ -397,6 +380,8 @@ int node(){
 			}//End mensaje nuevo
 
 		}//End While true
+
+		printf("[%d] Maxima cantidad de bloques alcanzada, no recibo mas mensajes \n",mpi_rank);
 
 		// free attribute and wait for the other threads
 		pthread_attr_destroy(&thread_attr);
@@ -408,7 +393,7 @@ int node(){
 	}
 
 	printf("[%d] Fin de ejecución \n",mpi_rank);
-
 	delete last_block_in_chain;
+
 	return 0;
 }
