@@ -64,7 +64,7 @@ bool verificar_y_migrar_cadena(const Block *rBlock, const MPI_Status *status)
 		hash_valido_primero && bloques_en_orden)
 	{
 		// Veo si puedo reconstruir la cadena
-		for (int i = 0; i < cant && !pude_migrar; ++i)
+		for (int i = 1; i < cant && !pude_migrar; ++i)
 		{
 			/* Para cada elemento de la cadena que me mandaron, me 
 			   fijo si ya lo tengo en node_blocks. Si encuentro uno,
@@ -73,7 +73,7 @@ bool verificar_y_migrar_cadena(const Block *rBlock, const MPI_Status *status)
 			bool encontre = (actual_it != node_blocks.end());
 			if (encontre || blockchain[i].index == 1)
 			{
-				for (int j = 0; j < i; ++j)
+				for (int j = 1; j <= i; ++j)
 				{
 					/* Agrego el bloque al diccionario */
 					node_blocks[string(blockchain[j].block_hash)] = blockchain[j];
