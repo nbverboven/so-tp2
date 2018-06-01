@@ -36,6 +36,8 @@ bool verificar_y_migrar_cadena(const Block *rBlock, const MPI_Status *status)
 	MPI_Recv(blockchain, VALIDATION_BLOCKS, *MPI_BLOCK, rBlock->node_owner_number, TAG_CHAIN_RESPONSE, MPI_COMM_WORLD, &status_recv);
 
 	//Cantidad: status_recv.count
+	int cant;
+	MPI_Get_count(&status_recv, *MPI_BLOCK, &cant);
 	printf("[%d] Recibo cadena de %d \n", mpi_rank, rBlock->node_owner_number);
 
 	/* Verifico que los bloques recibidos
@@ -47,7 +49,7 @@ bool verificar_y_migrar_cadena(const Block *rBlock, const MPI_Status *status)
 	bool hash_valido_primero = (hash_hex_str.compare(blockchain[0].block_hash) == 0);
 	bool bloques_en_orden = true;
 
-	for (int i = 0; i < status_recv.count-1 && bloques_en_orden; ++i)
+	for (int i = 0; i < cant-1 && bloques_en_orden; ++i)
 	{
 		if (strcmp(blockchain[i].previous_block_hash, blockchain[i+1].block_hash) == 1 ||
 			blockchain[i].index != blockchain[i+1].index + 1)
@@ -62,7 +64,7 @@ bool verificar_y_migrar_cadena(const Block *rBlock, const MPI_Status *status)
 		hash_valido_primero && bloques_en_orden)
 	{
 		// Veo si puedo reconstruir la cadena
-		for (int i = 0; i < status_recv.count && !pude_migrar; ++i)
+		for (int i = 0; i < cant && !pude_migrar; ++i)
 		{
 			/* Para cada elemento de la cadena que me mandaron, me 
 			   fijo si ya lo tengo en node_blocks. Si ecuentro uno,
