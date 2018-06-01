@@ -67,11 +67,11 @@ bool verificar_y_migrar_cadena(const Block *rBlock, const MPI_Status *status)
 		for (int i = 0; i < cant && !pude_migrar; ++i)
 		{
 			/* Para cada elemento de la cadena que me mandaron, me 
-			   fijo si ya lo tengo en node_blocks. Si ecuentro uno,
-			   puedo reconstruir la cadena a partir de ese. */
+			   fijo si ya lo tengo en node_blocks. Si encuentro uno,
+			   o si el último tiene índice 1, puedo reconstruir la cadena. */
 			map<string,Block>::iterator actual_it = node_blocks.find(blockchain[i].block_hash);
 			bool encontre = (actual_it != node_blocks.end());
-			if (encontre)
+			if (encontre || blockchain[i].index == 1)
 			{
 				for (int j = 0; j < i; ++j)
 				{
